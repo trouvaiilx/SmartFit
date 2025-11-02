@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--// FILE: app/src/main/res/values-night/themes.xml-->
+<resources>
+    <style name="Theme.SmartFit" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/dark_background</item>
+    </style>
+</resources>
