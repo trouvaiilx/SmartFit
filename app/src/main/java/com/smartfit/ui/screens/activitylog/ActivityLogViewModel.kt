@@ -11,10 +11,8 @@ import com.smartfit.domain.model.Activity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.*
 
-/**
- * ViewModel for Activity Log screen managing list of activities.
- */
 class ActivityLogViewModel(
     private val activityRepository: ActivityRepository,
     private val stepRepository: StepRepository
@@ -24,37 +22,46 @@ class ActivityLogViewModel(
     val uiState: StateFlow<ActivityLogUiState> = _uiState.asStateFlow()
 
     init {
-        // Delay initialization to prevent blocking
         viewModelScope.launch {
             delay(50)
             loadActivities()
-            loadWeeklySummary()
             observeStepUpdates()
         }
     }
 
+    fun setTimePeriod(period: TimePeriod) {
+        _uiState.value = _uiState.value.copy(selectedPeriod = period)
+    }
+
+    fun toggleDateExpansion(date: Long) {
+        val currentExpanded = _uiState.value.expandedDates
+        _uiState.value = _uiState.value.copy(
+            expandedDates = if (currentExpanded.contains(date)) {
+                currentExpanded - date
+            } else {
+                currentExpanded + date
+            }
+        )
+    }
+
     private fun observeStepUpdates() {
         viewModelScope.launch {
-            val today = System.currentTimeMillis()
-            val calendar = java.util.Calendar.getInstance().apply {
-                timeInMillis = today
-                set(java.util.Calendar.HOUR_OF_DAY, 0)
-                set(java.util.Calendar.MINUTE, 0)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }
-            val endOfDay = calendar.timeInMillis + 24 * 60 * 60 * 1000
-            val startOfWeek = endOfDay - 7 * 24 * 60 * 60 * 1000
-
             combine(
-                stepRepository.getStepsByDateRange(startOfWeek, endOfDay),
-                activityRepository.getAllActivities()
-            ) { stepCounts, _ ->
-                val totalSteps = stepCounts.sumOf { it.steps }
-                val (activitySteps, activityCalories) = activityRepository.getWeeklySummary(today)
+                stepRepository.getStepsByDateRange(0, Long.MAX_VALUE),
+                activityRepository.getAllActivities(),
+                _uiState.map { it.selectedPeriod }
+            ) { stepCounts, activities, period ->
+                val (startDate, endDate) = getDateRange(period)
+
+                val periodStepCounts = stepCounts.filter { it.date in startDate..<endDate }
+                val totalSteps = periodStepCounts.sumOf { it.steps }
+                val stepCalories = (totalSteps * 0.04).toInt()
+
+                val periodActivities = activities.filter { it.date in startDate..<endDate }
+                val activitySteps = periodActivities.sumOf { it.steps }
+                val activityCalories = periodActivities.sumOf { it.calories }
 
                 val combinedSteps = activitySteps + totalSteps
-                val stepCalories = (totalSteps * 0.04).toInt()
                 val totalCalories = activityCalories + stepCalories
 
                 Pair(combinedSteps, totalCalories)
@@ -62,10 +69,10 @@ class ActivityLogViewModel(
                 .distinctUntilChanged()
                 .collect { (steps, calories) ->
                     _uiState.value = _uiState.value.copy(
-                        weeklySteps = steps,
-                        weeklyCalories = calories
+                        periodSteps = steps,
+                        periodCalories = calories
                     )
-                    Log.d("ActivityLogViewModel", "Weekly updated: $steps steps, $calories calories")
+                    Log.d("ActivityLogViewModel", "Period updated: $steps steps, $calories calories")
                 }
         }
     }
@@ -73,46 +80,54 @@ class ActivityLogViewModel(
     private fun loadActivities() {
         viewModelScope.launch {
             Log.d("ActivityLogViewModel", "Loading activities from database")
-            activityRepository.getAllActivities()
+            combine(
+                activityRepository.getAllActivities(),
+                _uiState.map { it.selectedPeriod }
+            ) { activities, period ->
+                val (startDate, endDate) = getDateRange(period)
+                activities.filter { it.date in startDate..<endDate }
+            }
                 .distinctUntilChanged()
-                .collect { activities ->
-                    Log.d("ActivityLogViewModel", "Activities loaded: ${activities.size}")
-                    _uiState.value = _uiState.value.copy(activities = activities)
+                .collect { filteredActivities ->
+                    Log.d("ActivityLogViewModel", "Activities loaded: ${filteredActivities.size}")
+                    _uiState.value = _uiState.value.copy(activities = filteredActivities)
                 }
         }
     }
 
-    private fun loadWeeklySummary() {
-        viewModelScope.launch {
-            try {
-                Log.d("ActivityLogViewModel", "Loading weekly summary")
-                val today = System.currentTimeMillis()
-                val (steps, calories) = activityRepository.getWeeklySummary(today)
+    private fun getDateRange(period: TimePeriod): Pair<Long, Long> {
+        val calendar = Calendar.getInstance()
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
 
-                if (_uiState.value.weeklySteps != steps || _uiState.value.weeklyCalories != calories) {
-                    _uiState.value = _uiState.value.copy(
-                        weeklySteps = steps,
-                        weeklyCalories = calories
-                    )
-                    Log.d("ActivityLogViewModel", "Weekly summary updated: $steps steps, $calories calories")
-                }
-            } catch (e: Exception) {
-                Log.e("ActivityLogViewModel", "Error loading weekly summary", e)
-            }
+        val endDate = calendar.timeInMillis + 24 * 60 * 60 * 1000
+
+        val startDate = when (period) {
+            TimePeriod.TODAY -> calendar.timeInMillis
+            TimePeriod.THIS_WEEK -> endDate - 7 * 24 * 60 * 60 * 1000
         }
+
+        return Pair(startDate, endDate)
     }
 
     fun deleteActivity(activity: Activity) {
         viewModelScope.launch {
             Log.d("ActivityLogViewModel", "Deleting activity: ${activity.id}")
             activityRepository.deleteActivity(activity)
-            loadWeeklySummary()
         }
     }
 }
 
+enum class TimePeriod {
+    TODAY, THIS_WEEK
+}
+
 data class ActivityLogUiState(
     val activities: List<Activity> = emptyList(),
-    val weeklySteps: Int = 0,
-    val weeklyCalories: Int = 0
+    val periodSteps: Int = 0,
+    val periodCalories: Int = 0,
+    val selectedPeriod: TimePeriod = TimePeriod.TODAY,
+    val expandedDates: Set<Long> = emptySet()
 )

@@ -6,6 +6,8 @@ import android.app.Activity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,14 +21,12 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.smartfit.ui.components.AnimatedErrorMessage
 
-/**
- * Screen for adding or editing activity entries with adaptive layout.
- */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun AddEditActivityScreen(
@@ -40,7 +40,9 @@ fun AddEditActivityScreen(
     val windowSizeClass = calculateWindowSizeClass(activity)
     val isTablet = windowSizeClass.widthSizeClass > WindowWidthSizeClass.Compact
 
-    // Load activity data when in edit mode - no loading screen
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     LaunchedEffect(activityId) {
         if (isEditMode && activityId > 0) {
             viewModel.loadActivity(activityId)
@@ -59,30 +61,41 @@ fun AddEditActivityScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState())
-                .then(if (isTablet) Modifier.width(600.dp) else Modifier),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                }
         ) {
-            ActivityForm(
-                uiState = uiState,
-                viewModel = viewModel
-            )
-
-            Button(
-                onClick = { viewModel.saveActivity(onNavigateBack) },
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
+                    .then(if (isTablet) Modifier.width(600.dp) else Modifier),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(if (isEditMode) "Update Activity" else "Save Activity")
+                ActivityForm(
+                    uiState = uiState,
+                    viewModel = viewModel
+                )
+
+                Button(
+                    onClick = { viewModel.saveActivity(onNavigateBack) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isEditMode) "Update Activity" else "Save Activity")
+                }
             }
         }
     }
 
-    // Animated error message overlay
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -140,7 +153,6 @@ private fun ActivityForm(
         }
     }
 
-    // Show custom activity name input if "Other" is selected
     AnimatedVisibility(
         visible = uiState.type == "Other",
         enter = fadeIn(tween(300)) + expandVertically(tween(300)),

@@ -1,8 +1,11 @@
 // FILE: app/src/main/java/com/smartfit/ui/screens/meals/AddEditMealScreen.kt
+
 package com.smartfit.ui.screens.meals
 
 import android.app.Activity
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -16,7 +19,8 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.smartfit.ui.components.AnimatedErrorMessage
@@ -34,7 +38,9 @@ fun AddEditMealScreen(
     val windowSizeClass = calculateWindowSizeClass(activity)
     val isTablet = windowSizeClass.widthSizeClass > WindowWidthSizeClass.Compact
 
-    // Load meal data when in edit mode
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     LaunchedEffect(mealId) {
         if (isEditMode && mealId > 0) {
             viewModel.loadMeal(mealId)
@@ -53,31 +59,42 @@ fun AddEditMealScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState())
-                .then(if (isTablet) Modifier.width(600.dp) else Modifier),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                }
         ) {
-            MealForm(
-                uiState = uiState,
-                viewModel = viewModel,
-                isEditMode = isEditMode
-            )
-
-            Button(
-                onClick = { viewModel.saveMeal(onNavigateBack) },
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
+                    .then(if (isTablet) Modifier.width(600.dp) else Modifier),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text(if (isEditMode) "Update Meal" else "Save Meal")
+                MealForm(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    isEditMode = isEditMode
+                )
+
+                Button(
+                    onClick = { viewModel.saveMeal(onNavigateBack) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isEditMode) "Update Meal" else "Save Meal")
+                }
             }
         }
     }
 
-    // Animated error message overlay
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -100,7 +117,6 @@ private fun MealForm(
     var mealTypeExpanded by remember { mutableStateOf(false) }
     var foodSelectorExpanded by remember { mutableStateOf(false) }
 
-    // Meal Type
     Text(
         text = "Meal Type",
         style = MaterialTheme.typography.labelLarge
@@ -117,7 +133,10 @@ private fun MealForm(
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = mealTypeExpanded) },
             modifier = Modifier
                 .fillMaxWidth()
-                .menuAnchor()
+                .menuAnchor(
+                    type = ExposedDropdownMenuAnchorType.PrimaryEditable,
+                    enabled = true
+                )
         )
         ExposedDropdownMenu(
             expanded = mealTypeExpanded,
@@ -135,7 +154,6 @@ private fun MealForm(
         }
     }
 
-    // Food Selection - only show if not in edit mode
     if (!isEditMode) {
         Text(
             text = "Select Food",
@@ -153,7 +171,10 @@ private fun MealForm(
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = foodSelectorExpanded) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor()
+                    .menuAnchor(
+                        type = ExposedDropdownMenuAnchorType.PrimaryEditable,
+                        enabled = true
+                    )
             )
             ExposedDropdownMenu(
                 expanded = foodSelectorExpanded,
@@ -180,14 +201,12 @@ private fun MealForm(
             }
         }
 
-        // Or custom name
         Text(
             text = "Or Enter Custom Food",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     } else {
-        // In edit mode, show food name as label
         Text(
             text = "Food Name",
             style = MaterialTheme.typography.labelLarge
@@ -202,7 +221,6 @@ private fun MealForm(
         enabled = !isEditMode
     )
 
-    // Portion size
     OutlinedTextField(
         value = uiState.portion,
         onValueChange = { viewModel.updatePortion(it) },
@@ -212,7 +230,6 @@ private fun MealForm(
         modifier = Modifier.fillMaxWidth()
     )
 
-    // Calories (auto-calculated or manual)
     OutlinedTextField(
         value = uiState.calories,
         onValueChange = { viewModel.updateCalories(it) },
@@ -228,7 +245,6 @@ private fun MealForm(
         modifier = Modifier.fillMaxWidth()
     )
 
-    // Notes
     OutlinedTextField(
         value = uiState.notes,
         onValueChange = { viewModel.updateNotes(it) },
@@ -238,7 +254,6 @@ private fun MealForm(
         maxLines = 5
     )
 
-    // Preview
     if (uiState.selectedFood != null || uiState.customFoodName.isNotEmpty()) {
         Card(
             modifier = Modifier.fillMaxWidth(),
