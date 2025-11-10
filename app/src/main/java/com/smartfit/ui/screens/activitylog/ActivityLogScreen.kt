@@ -1,5 +1,3 @@
-// FILE: app/src/main/java/com/smartfit/ui/screens/activitylog/ActivityLogScreen.kt
-
 package com.smartfit.ui.screens.activitylog
 
 import androidx.activity.compose.LocalActivity
@@ -23,6 +21,8 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -337,21 +337,23 @@ private fun CollapsibleDateSection(
     onDelete: (Activity) -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("EEEE, MMM dd", Locale.getDefault()) }
-    val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val cardShape = CardDefaults.shape
 
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = cardShape
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(cardShape)
                     .clickable(
                         onClick = onToggleExpand,
-                        indication = ripple(bounded = true),
+                        indication = ripple(),
                         interactionSource = remember { MutableInteractionSource() }
                     )
-                    .padding(vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 20.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -381,20 +383,16 @@ private fun CollapsibleDateSection(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Column(
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     activities.forEach { activity ->
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            color = if (isDarkTheme) {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 1f)
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 1f)
-                            },
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
                             shape = MaterialTheme.shapes.medium,
-                            tonalElevation = 3.dp,
-                            shadowElevation = 2.dp
+                            tonalElevation = 10.dp,
                         ) {
                             ActivityCardContent(
                                 activity = activity,
@@ -581,13 +579,16 @@ private fun ActivityCard(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+    val cardShape = CardDefaults.shape
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(cardShape)
             .clickable(
                 onClick = onEdit,
                 indication = ripple(),
+
                 interactionSource = remember { MutableInteractionSource() }
             )
             .semantics { contentDescription = "Activity: ${activity.type}" }

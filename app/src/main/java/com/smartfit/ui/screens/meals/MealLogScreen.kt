@@ -25,6 +25,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -509,21 +510,22 @@ private fun CollapsibleDateSection(
     onDelete: (Meal) -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("EEEE, MMM dd", Locale.getDefault()) }
-    val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val cardShape = CardDefaults.shape
 
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(cardShape)
                     .clickable(
                         onClick = onToggleExpand,
-                        indication = ripple(bounded = true),
+                        indication = ripple(),
                         interactionSource = remember { MutableInteractionSource() }
                     )
-                    .padding(vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 20.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -553,20 +555,16 @@ private fun CollapsibleDateSection(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Column(
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     meals.forEach { meal ->
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            color = if (isDarkTheme) {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 1f)
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 1f)
-                            },
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
                             shape = MaterialTheme.shapes.medium,
-                            tonalElevation = 3.dp,
-                            shadowElevation = 2.dp
+                            tonalElevation = 10.dp
                         ) {
                             MealCardContent(
                                 meal = meal,
@@ -712,10 +710,12 @@ private fun MealCard(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     val timeFormat = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+    val cardShape = CardDefaults.shape
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(cardShape)
             .clickable(
                 onClick = onEdit,
                 indication = ripple(),

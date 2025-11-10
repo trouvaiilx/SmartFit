@@ -51,13 +51,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Install splash screen before super.onCreate()
         installSplashScreen()
 
         super.onCreate(savedInstanceState)
         val appContainer = (application as SmartFitApplication).appContainer
 
-        // Pre-load theme preference to avoid flash
+        // Pre-load
         val initialTheme = runBlocking {
             appContainer.preferencesManager.themeModeFlow.first()
         }
@@ -89,7 +88,6 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            // Observe theme preference
             val themeMode by appContainer.preferencesManager.themeModeFlow.collectAsState(
                 initial = initialTheme
             )
