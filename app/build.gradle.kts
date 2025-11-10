@@ -21,6 +21,19 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Read API key from local.properties
+        val properties = org.jetbrains.kotlin.konan.properties.Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            properties.load(localPropertiesFile.inputStream())
+        }
+
+        buildConfigField(
+            "String",
+            "EXERCISEDB_API_KEY",
+            "\"${properties.getProperty("EXERCISEDB_API_KEY", "")}\""
+        )
     }
 
     buildTypes {
@@ -43,6 +56,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {
