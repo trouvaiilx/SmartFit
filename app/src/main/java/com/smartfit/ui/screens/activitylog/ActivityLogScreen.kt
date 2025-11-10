@@ -1,3 +1,5 @@
+// FILE: app/src/main/java/com/smartfit/ui/screens/activitylog/ActivityLogScreen.kt
+
 package com.smartfit.ui.screens.activitylog
 
 import androidx.activity.compose.LocalActivity
@@ -6,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,14 +24,16 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.smartfit.domain.model.Activity
+import com.smartfit.ui.components.*
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -40,6 +45,7 @@ fun ActivityLogScreen(
     onNavigateToEditActivity: (Int) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val activity = LocalActivity.current as android.app.Activity
     val windowSizeClass = calculateWindowSizeClass(activity)
     val isTablet = windowSizeClass.widthSizeClass > WindowWidthSizeClass.Compact
@@ -65,19 +71,25 @@ fun ActivityLogScreen(
         if (isTablet) {
             TabletActivityLogLayout(
                 uiState = uiState,
+                searchQuery = searchQuery,
+                onSearchQueryChange = viewModel::updateSearchQuery,
                 onEditActivity = onNavigateToEditActivity,
                 onDeleteActivity = viewModel::deleteActivity,
                 onPeriodChange = viewModel::setTimePeriod,
                 onToggleDateExpansion = viewModel::toggleDateExpansion,
+                onAddActivity = onNavigateToAddActivity,
                 modifier = Modifier.padding(paddingValues)
             )
         } else {
             PhoneActivityLogLayout(
                 uiState = uiState,
+                searchQuery = searchQuery,
+                onSearchQueryChange = viewModel::updateSearchQuery,
                 onEditActivity = onNavigateToEditActivity,
                 onDeleteActivity = viewModel::deleteActivity,
                 onPeriodChange = viewModel::setTimePeriod,
                 onToggleDateExpansion = viewModel::toggleDateExpansion,
+                onAddActivity = onNavigateToAddActivity,
                 modifier = Modifier.padding(paddingValues)
             )
         }
@@ -87,19 +99,30 @@ fun ActivityLogScreen(
 @Composable
 private fun PhoneActivityLogLayout(
     uiState: ActivityLogUiState,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     onEditActivity: (Int) -> Unit,
     onDeleteActivity: (Activity) -> Unit,
     onPeriodChange: (TimePeriod) -> Unit,
     onToggleDateExpansion: (Long) -> Unit,
+    onAddActivity: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val focusManager = LocalFocusManager.current
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = {
+                    focusManager.clearFocus()
+                })
+            }
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 175.dp)
     ) {
+        // Period Selector
         item {
             PeriodSelector(
                 selectedPeriod = uiState.selectedPeriod,
@@ -107,6 +130,7 @@ private fun PhoneActivityLogLayout(
             )
         }
 
+        // Summary Card or Skeleton
         item {
             SummaryCard(
                 steps = uiState.periodSteps,
@@ -115,27 +139,24 @@ private fun PhoneActivityLogLayout(
             )
         }
 
+        // Search Bar
+        item {
+            SearchBar(
+                query = searchQuery,
+                onQueryChange = onSearchQueryChange,
+                onSearch = { /* Real-time search already active */ },
+                placeholder = "Search activities...",
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Activities List
         if (uiState.activities.isEmpty()) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "No activities yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Add your first activity!",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                if (searchQuery.isNotEmpty()) {
+                    EmptySearchResultsState(searchQuery = searchQuery)
+                } else {
+                    EmptyActivitiesState(onAddClick = onAddActivity)
                 }
             }
         } else {
@@ -187,15 +208,25 @@ private fun PhoneActivityLogLayout(
 @Composable
 private fun TabletActivityLogLayout(
     uiState: ActivityLogUiState,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     onEditActivity: (Int) -> Unit,
     onDeleteActivity: (Activity) -> Unit,
     onPeriodChange: (TimePeriod) -> Unit,
     onToggleDateExpansion: (Long) -> Unit,
+    onAddActivity: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val focusManager = LocalFocusManager.current
+
     Row(
         modifier = modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = {
+                    focusManager.clearFocus()
+                })
+            }
             .padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -215,73 +246,70 @@ private fun TabletActivityLogLayout(
             )
         }
 
-        LazyColumn(
+        Column(
             modifier = Modifier.weight(0.7f),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 160.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Search Bar
+            SearchBar(
+                query = searchQuery,
+                onQueryChange = onSearchQueryChange,
+                onSearch = { /* Real-time search already active */ },
+                placeholder = "Search activities...",
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Activities List
             if (uiState.activities.isEmpty()) {
-                item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(22.dp)
-                        ) {
-                            Text(
-                                text = "No activities yet",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Add your first activity!",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                if (searchQuery.isNotEmpty()) {
+                    EmptySearchResultsState(searchQuery = searchQuery)
+                } else {
+                    EmptyActivitiesState(onAddClick = onAddActivity)
                 }
             } else {
-                val activitiesByDate = uiState.activities.groupBy { activity ->
-                    val calendar = Calendar.getInstance().apply {
-                        timeInMillis = activity.date
-                        set(Calendar.HOUR_OF_DAY, 0)
-                        set(Calendar.MINUTE, 0)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 160.dp)
+                ) {
+                    val activitiesByDate = uiState.activities.groupBy { activity ->
+                        val calendar = Calendar.getInstance().apply {
+                            timeInMillis = activity.date
+                            set(Calendar.HOUR_OF_DAY, 0)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+                        calendar.timeInMillis
                     }
-                    calendar.timeInMillis
-                }
 
-                if (uiState.selectedPeriod == TimePeriod.THIS_WEEK) {
-                    activitiesByDate.forEach { (date, activitiesForDate) ->
-                        item {
-                            CollapsibleDateSection(
-                                date = date,
-                                activities = activitiesForDate,
-                                isExpanded = uiState.expandedDates.contains(date),
-                                onToggleExpand = { onToggleDateExpansion(date) },
-                                onEdit = onEditActivity,
-                                onDelete = onDeleteActivity
-                            )
+                    if (uiState.selectedPeriod == TimePeriod.THIS_WEEK) {
+                        activitiesByDate.forEach { (date, activitiesForDate) ->
+                            item {
+                                CollapsibleDateSection(
+                                    date = date,
+                                    activities = activitiesForDate,
+                                    isExpanded = uiState.expandedDates.contains(date),
+                                    onToggleExpand = { onToggleDateExpansion(date) },
+                                    onEdit = onEditActivity,
+                                    onDelete = onDeleteActivity
+                                )
+                            }
                         }
-                    }
-                } else {
-                    activitiesByDate.forEach { (date, activitiesForDate) ->
-                        item {
-                            DateHeader(date = date)
-                        }
-                        items(
-                            items = activitiesForDate,
-                            key = { it.id }
-                        ) { activity ->
-                            ActivityCard(
-                                activity = activity,
-                                onEdit = { onEditActivity(activity.id) },
-                                onDelete = { onDeleteActivity(activity) }
-                            )
+                    } else {
+                        activitiesByDate.forEach { (date, activitiesForDate) ->
+                            item {
+                                DateHeader(date = date)
+                            }
+                            items(
+                                items = activitiesForDate,
+                                key = { it.id }
+                            ) { activity ->
+                                ActivityCard(
+                                    activity = activity,
+                                    onEdit = { onEditActivity(activity.id) },
+                                    onDelete = { onDeleteActivity(activity) }
+                                )
+                            }
                         }
                     }
                 }
@@ -503,10 +531,6 @@ private fun ActivityCardContent(
     }
 }
 
-private fun androidx.compose.ui.graphics.Color.luminance(): Float {
-    return 0.299f * red + 0.587f * green + 0.114f * blue
-}
-
 @Composable
 private fun SummaryCard(
     steps: Int,
@@ -588,7 +612,6 @@ private fun ActivityCard(
             .clickable(
                 onClick = onEdit,
                 indication = ripple(),
-
                 interactionSource = remember { MutableInteractionSource() }
             )
             .semantics { contentDescription = "Activity: ${activity.type}" }

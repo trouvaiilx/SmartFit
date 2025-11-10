@@ -35,7 +35,6 @@ interface ApiService {
                 .addInterceptor { chain ->
                     val originalRequest = chain.request()
 
-                    // Only add API key headers if a key is provided
                     val request = if (apiKey.isNotEmpty()) {
                         originalRequest.newBuilder()
                             .addHeader("x-rapidapi-key", apiKey)

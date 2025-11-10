@@ -6,8 +6,10 @@ import android.util.Log
 import com.smartfit.data.remote.ApiService
 import com.smartfit.data.remote.dto.toDomainModel
 import com.smartfit.domain.model.Suggestion
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 
 /**
  * Repository for fetching workout suggestions from REST API or mock data.
@@ -29,6 +31,26 @@ class SuggestionRepository(
             val response = apiService.getExercises(limit = limit)
             Log.d("SuggestionRepository", "Successfully fetched ${response.size} suggestions")
             Result.success(response.map { it.toDomainModel() })
+
+        } catch (e: HttpException) {
+            // Catch specific HTTP-related errors first
+            if (e.code() == 429) {
+                // Log the "Too Many Requests" error as a WARNING instead of an error
+                Log.w("SuggestionRepository", "API rate limit exceeded (HTTP 429). Falling back to mock data.", e)
+            } else {
+                // Log other HTTP errors as a standard error
+                Log.e("SuggestionRepository", "HTTP Error fetching suggestions: ${e.code()}", e)
+            }
+            // Fallback to mock data for any HTTP error
+            Log.d("SuggestionRepository", "Falling back to mock data")
+            Result.success(getMockSuggestions(limit))
+
+        } catch (e: IOException) {
+            //Catch network errors (e.g., no internet)
+            Log.e("SuggestionRepository", "Network error (IOException): ${e.message}", e)
+            Log.d("SuggestionRepository", "Falling back to mock data")
+            Result.success(getMockSuggestions(limit))
+
         } catch (e: Exception) {
             Log.e("SuggestionRepository", "Error fetching suggestions: ${e.message}", e)
             // Fallback to mock data on error

@@ -103,7 +103,8 @@ fun NavGraph(appContainer: AppContainer) {
                                     },
                                     onNavigateToSettings = {
                                         navController.navigate("settings")
-                                    }
+                                    },
+                                    networkMonitor = appContainer.networkMonitor
                                 )
                             }
                             "activity_log" -> {

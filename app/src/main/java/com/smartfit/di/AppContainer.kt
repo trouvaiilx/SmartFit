@@ -16,6 +16,7 @@ import com.smartfit.data.repository.StepRepository
 import com.smartfit.data.repository.SuggestionRepository
 import com.smartfit.data.sensors.StepCounterService
 import com.smartfit.domain.model.Suggestion
+import com.smartfit.util.NetworkMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -40,6 +41,7 @@ class AppContainer(private val context: Context) {
     val stepRepository = StepRepository(stepCountDao)
     val suggestionRepository = SuggestionRepository(apiService, useMockData = apiKey.isEmpty())
     val preferencesManager = PreferencesManager(context)
+    val networkMonitor = NetworkMonitor(context)
 
     // Cache for loaded suggestions with timestamp
     var cachedSuggestions: List<Suggestion> = emptyList()

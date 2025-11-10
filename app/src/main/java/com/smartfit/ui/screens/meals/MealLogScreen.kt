@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,14 +24,17 @@ import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.smartfit.domain.model.Meal
+import com.smartfit.ui.components.*
 import com.smartfit.ui.screens.activitylog.TimePeriod
 import java.text.SimpleDateFormat
 import java.util.*
@@ -43,6 +47,7 @@ fun MealLogScreen(
     onNavigateToEditMeal: (Int) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val searchQuery by viewModel.searchQuery.collectAsState()
     val activity = LocalActivity.current as Activity
     val windowSizeClass = calculateWindowSizeClass(activity)
     val isTablet = windowSizeClass.widthSizeClass > WindowWidthSizeClass.Compact
@@ -68,19 +73,25 @@ fun MealLogScreen(
         if (isTablet) {
             TabletMealLogLayout(
                 uiState = uiState,
+                searchQuery = searchQuery,
+                onSearchQueryChange = viewModel::updateSearchQuery,
                 onEditMeal = onNavigateToEditMeal,
                 onDeleteMeal = viewModel::deleteMeal,
                 onPeriodChange = viewModel::setTimePeriod,
                 onToggleDateExpansion = viewModel::toggleDateExpansion,
+                onAddMeal = onNavigateToAddMeal,
                 modifier = Modifier.padding(paddingValues)
             )
         } else {
             PhoneMealLogLayout(
                 uiState = uiState,
+                searchQuery = searchQuery,
+                onSearchQueryChange = viewModel::updateSearchQuery,
                 onEditMeal = onNavigateToEditMeal,
                 onDeleteMeal = viewModel::deleteMeal,
                 onPeriodChange = viewModel::setTimePeriod,
                 onToggleDateExpansion = viewModel::toggleDateExpansion,
+                onAddMeal = onNavigateToAddMeal,
                 modifier = Modifier.padding(paddingValues)
             )
         }
@@ -90,19 +101,31 @@ fun MealLogScreen(
 @Composable
 private fun PhoneMealLogLayout(
     uiState: MealLogUiState,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     onEditMeal: (Int) -> Unit,
     onDeleteMeal: (Meal) -> Unit,
     onPeriodChange: (TimePeriod) -> Unit,
     onToggleDateExpansion: (Long) -> Unit,
+    onAddMeal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val focusManager = LocalFocusManager.current
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = {
+                    focusManager.clearFocus()
+                })
+            }
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(top = 16.dp, bottom = 175.dp)
     ) {
+
+        // Period Selector
         item {
             PeriodSelector(
                 selectedPeriod = uiState.selectedPeriod,
@@ -110,6 +133,7 @@ private fun PhoneMealLogLayout(
             )
         }
 
+        // Calorie Balance Card or Skeleton
         item {
             CalorieBalanceCard(
                 consumed = uiState.dailyCaloriesConsumed,
@@ -119,27 +143,24 @@ private fun PhoneMealLogLayout(
             )
         }
 
+        // Search Bar
+        item {
+            SearchBar(
+                query = searchQuery,
+                onQueryChange = onSearchQueryChange,
+                onSearch = { /* Real-time search already active */ },
+                placeholder = "Search meals...",
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // Meals List
         if (uiState.meals.isEmpty()) {
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "No meals logged yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Start tracking your nutrition!",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                if (searchQuery.isNotEmpty()) {
+                    EmptySearchResultsState(searchQuery = searchQuery)
+                } else {
+                    EmptyMealsState(onAddClick = onAddMeal)
                 }
             }
         } else {
@@ -191,15 +212,25 @@ private fun PhoneMealLogLayout(
 @Composable
 private fun TabletMealLogLayout(
     uiState: MealLogUiState,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     onEditMeal: (Int) -> Unit,
     onDeleteMeal: (Meal) -> Unit,
     onPeriodChange: (TimePeriod) -> Unit,
     onToggleDateExpansion: (Long) -> Unit,
+    onAddMeal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val focusManager = LocalFocusManager.current
+
     Row(
         modifier = modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = {
+                    focusManager.clearFocus()
+                })
+            }
             .padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -212,81 +243,80 @@ private fun TabletMealLogLayout(
                 onPeriodChange = onPeriodChange
             )
 
+
             CalorieBalanceCard(
                 consumed = uiState.dailyCaloriesConsumed,
                 burned = uiState.dailyCaloriesBurned,
                 goal = uiState.calorieGoal,
                 period = uiState.selectedPeriod
             )
+
         }
 
-        LazyColumn(
+        Column(
             modifier = Modifier.weight(0.7f),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 160.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Search Bar
+            SearchBar(
+                query = searchQuery,
+                onQueryChange = onSearchQueryChange,
+                onSearch = { /* Real-time search already active */ },
+                placeholder = "Search meals...",
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Meals List
             if (uiState.meals.isEmpty()) {
-                item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(22.dp)
-                        ) {
-                            Text(
-                                text = "No meals logged yet",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Start tracking your nutrition!",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                if (searchQuery.isNotEmpty()) {
+                    EmptySearchResultsState(searchQuery = searchQuery)
+                } else {
+                    EmptyMealsState(onAddClick = onAddMeal)
                 }
             } else {
-                val mealsByDate = uiState.meals.groupBy { meal ->
-                    val calendar = Calendar.getInstance().apply {
-                        timeInMillis = meal.date
-                        set(Calendar.HOUR_OF_DAY, 0)
-                        set(Calendar.MINUTE, 0)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 160.dp)
+                ) {
+                    val mealsByDate = uiState.meals.groupBy { meal ->
+                        val calendar = Calendar.getInstance().apply {
+                            timeInMillis = meal.date
+                            set(Calendar.HOUR_OF_DAY, 0)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+                        calendar.timeInMillis
                     }
-                    calendar.timeInMillis
-                }
 
-                if (uiState.selectedPeriod == TimePeriod.THIS_WEEK) {
-                    mealsByDate.forEach { (date, mealsForDate) ->
-                        item {
-                            CollapsibleDateSection(
-                                date = date,
-                                meals = mealsForDate,
-                                isExpanded = uiState.expandedDates.contains(date),
-                                onToggleExpand = { onToggleDateExpansion(date) },
-                                onEdit = onEditMeal,
-                                onDelete = onDeleteMeal
-                            )
+                    if (uiState.selectedPeriod == TimePeriod.THIS_WEEK) {
+                        mealsByDate.forEach { (date, mealsForDate) ->
+                            item {
+                                CollapsibleDateSection(
+                                    date = date,
+                                    meals = mealsForDate,
+                                    isExpanded = uiState.expandedDates.contains(date),
+                                    onToggleExpand = { onToggleDateExpansion(date) },
+                                    onEdit = onEditMeal,
+                                    onDelete = onDeleteMeal
+                                )
+                            }
                         }
-                    }
-                } else {
-                    mealsByDate.forEach { (date, mealsForDate) ->
-                        item {
-                            DateHeader(date = date)
-                        }
-                        items(
-                            items = mealsForDate,
-                            key = { it.id }
-                        ) { meal ->
-                            MealCard(
-                                meal = meal,
-                                onEdit = { onEditMeal(meal.id) },
-                                onDelete = { onDeleteMeal(meal) }
-                            )
+                    } else {
+                        mealsByDate.forEach { (date, mealsForDate) ->
+                            item {
+                                DateHeader(date = date)
+                            }
+                            items(
+                                items = mealsForDate,
+                                key = { it.id }
+                            ) { meal ->
+                                MealCard(
+                                    meal = meal,
+                                    onEdit = { onEditMeal(meal.id) },
+                                    onDelete = { onDeleteMeal(meal) }
+                                )
+                            }
                         }
                     }
                 }
@@ -696,10 +726,6 @@ private fun MealCardContent(
             }
         )
     }
-}
-
-private fun androidx.compose.ui.graphics.Color.luminance(): Float {
-    return 0.299f * red + 0.587f * green + 0.114f * blue
 }
 
 @Composable

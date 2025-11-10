@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.smartfit.data.repository.ActivityRepository
 import com.smartfit.data.repository.StepRepository
 import com.smartfit.domain.model.Activity
+import com.smartfit.util.Constants
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -21,9 +22,12 @@ class ActivityLogViewModel(
     private val _uiState = MutableStateFlow(ActivityLogUiState())
     val uiState: StateFlow<ActivityLogUiState> = _uiState.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
     init {
         viewModelScope.launch {
-            delay(50)
+            delay(Constants.UI_SHORT_DELAY_MS)
             loadActivities()
             observeStepUpdates()
         }
@@ -44,6 +48,14 @@ class ActivityLogViewModel(
         )
     }
 
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun clearSearch() {
+        _searchQuery.value = ""
+    }
+
     private fun observeStepUpdates() {
         viewModelScope.launch {
             combine(
@@ -55,7 +67,7 @@ class ActivityLogViewModel(
 
                 val periodStepCounts = stepCounts.filter { it.date in startDate..<endDate }
                 val totalSteps = periodStepCounts.sumOf { it.steps }
-                val stepCalories = (totalSteps * 0.04).toInt()
+                val stepCalories = (totalSteps * Constants.CALORIES_PER_STEP).toInt()
 
                 val periodActivities = activities.filter { it.date in startDate..<endDate }
                 val activitySteps = periodActivities.sumOf { it.steps }
@@ -80,17 +92,33 @@ class ActivityLogViewModel(
     private fun loadActivities() {
         viewModelScope.launch {
             Log.d("ActivityLogViewModel", "Loading activities from database")
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
             combine(
                 activityRepository.getAllActivities(),
-                _uiState.map { it.selectedPeriod }
-            ) { activities, period ->
+                _uiState.map { it.selectedPeriod },
+                _searchQuery
+            ) { activities, period, query ->
                 val (startDate, endDate) = getDateRange(period)
-                activities.filter { it.date in startDate..<endDate }
+                val filteredByDate = activities.filter { it.date in startDate..<endDate }
+
+                // Apply search filter
+                if (query.isBlank()) {
+                    filteredByDate
+                } else {
+                    filteredByDate.filter { activity ->
+                        activity.type.contains(query, ignoreCase = true) ||
+                                activity.notes.contains(query, ignoreCase = true)
+                    }
+                }
             }
                 .distinctUntilChanged()
                 .collect { filteredActivities ->
                     Log.d("ActivityLogViewModel", "Activities loaded: ${filteredActivities.size}")
-                    _uiState.value = _uiState.value.copy(activities = filteredActivities)
+                    _uiState.value = _uiState.value.copy(
+                        activities = filteredActivities,
+                        isLoading = false
+                    )
                 }
         }
     }
@@ -102,11 +130,11 @@ class ActivityLogViewModel(
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
 
-        val endDate = calendar.timeInMillis + 24 * 60 * 60 * 1000
+        val endDate = calendar.timeInMillis + Constants.DAY_IN_MILLIS
 
         val startDate = when (period) {
             TimePeriod.TODAY -> calendar.timeInMillis
-            TimePeriod.THIS_WEEK -> endDate - 7 * 24 * 60 * 60 * 1000
+            TimePeriod.THIS_WEEK -> endDate - Constants.WEEK_IN_MILLIS
         }
 
         return Pair(startDate, endDate)
@@ -129,5 +157,6 @@ data class ActivityLogUiState(
     val periodSteps: Int = 0,
     val periodCalories: Int = 0,
     val selectedPeriod: TimePeriod = TimePeriod.TODAY,
-    val expandedDates: Set<Long> = emptySet()
+    val expandedDates: Set<Long> = emptySet(),
+    val isLoading: Boolean = false
 )

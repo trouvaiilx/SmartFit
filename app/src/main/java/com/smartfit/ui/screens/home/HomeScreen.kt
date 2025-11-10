@@ -11,7 +11,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -30,56 +29,70 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.smartfit.domain.model.Suggestion
-import com.smartfit.ui.components.AnimatedSkeletonSuggestion
-import com.smartfit.ui.components.TypewriterText
+import com.smartfit.ui.components.*
+import com.smartfit.util.NetworkMonitor
 import kotlinx.coroutines.delay
 
 /**
  * Home screen displaying daily summary and workout suggestions.
+ * Now with offline banner, enhanced loading states, and better empty states.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     onNavigateToExerciseDetail: (String) -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    networkMonitor: NetworkMonitor
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val activity = LocalActivity.current as Activity
     val windowSizeClass = calculateWindowSizeClass(activity)
     val isTablet = windowSizeClass.widthSizeClass > WindowWidthSizeClass.Compact
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("SmartFit") },
-                actions = {
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings"
-                        )
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("SmartFit") },
+                    actions = {
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings"
+                            )
+                        }
                     }
+                )
+            }
+        ) { paddingValues ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (isTablet) {
+                    TabletHomeLayout(
+                        uiState = uiState,
+                        onLoadSuggestions = viewModel::loadSuggestions,
+                        onToggleExpanded = viewModel::toggleSuggestionsExpanded,
+                        onSuggestionClick = onNavigateToExerciseDetail,
+                        modifier = Modifier.padding(paddingValues)
+                    )
+                } else {
+                    PhoneHomeLayout(
+                        uiState = uiState,
+                        onLoadSuggestions = viewModel::loadSuggestions,
+                        onToggleExpanded = viewModel::toggleSuggestionsExpanded,
+                        onSuggestionClick = onNavigateToExerciseDetail,
+                        modifier = Modifier.padding(paddingValues)
+                    )
                 }
-            )
-        }
-    ) { paddingValues ->
-        if (isTablet) {
-            TabletHomeLayout(
-                uiState = uiState,
-                onLoadSuggestions = viewModel::loadSuggestions,
-                onToggleExpanded = viewModel::toggleSuggestionsExpanded,
-                onSuggestionClick = onNavigateToExerciseDetail,
-                modifier = Modifier.padding(paddingValues)
-            )
-        } else {
-            PhoneHomeLayout(
-                uiState = uiState,
-                onLoadSuggestions = viewModel::loadSuggestions,
-                onToggleExpanded = viewModel::toggleSuggestionsExpanded,
-                onSuggestionClick = onNavigateToExerciseDetail,
-                modifier = Modifier.padding(paddingValues)
-            )
+
+                // Offline banner at the top
+                OfflineBanner(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(paddingValues),
+                    networkMonitor = networkMonitor
+                )
+            }
         }
     }
 }
@@ -123,7 +136,7 @@ private fun PhoneHomeLayout(
                 isSuggestionsExpanded = uiState.isSuggestionsExpanded,
                 onLoadSuggestions = onLoadSuggestions,
                 onToggleExpanded = onToggleExpanded,
-                isContainedInScrollingParent = true, // The parent scrolls
+                isContainedInScrollingParent = true,
                 onSuggestionClick = onSuggestionClick
             )
         }
@@ -171,7 +184,7 @@ private fun TabletHomeLayout(
                 isSuggestionsExpanded = uiState.isSuggestionsExpanded,
                 onLoadSuggestions = onLoadSuggestions,
                 onToggleExpanded = onToggleExpanded,
-                isContainedInScrollingParent = false, // The parent does not scroll
+                isContainedInScrollingParent = false,
                 onSuggestionClick = onSuggestionClick
             )
         }
@@ -186,7 +199,6 @@ private fun DailySummaryCard(
     netCalories: Int,
     modifier: Modifier = Modifier
 ) {
-    // Track if this is the first load
     var isFirstLoad by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
@@ -216,7 +228,6 @@ private fun DailySummaryCard(
                 fontWeight = FontWeight.Bold
             )
 
-            // Steps
             SummaryRow(
                 label = "Steps",
                 value = steps.toString(),
@@ -229,7 +240,6 @@ private fun DailySummaryCard(
                 color = MaterialTheme.colorScheme.outlineVariant
             )
 
-            // Calories Consumed
             SummaryRow(
                 label = "Calories Consumed",
                 value = "$caloriesConsumed cal",
@@ -242,7 +252,6 @@ private fun DailySummaryCard(
                 color = MaterialTheme.colorScheme.outlineVariant
             )
 
-            // Calories Burned
             SummaryRow(
                 label = "Calories Burned",
                 value = "$caloriesBurned cal",
@@ -255,14 +264,12 @@ private fun DailySummaryCard(
                 color = MaterialTheme.colorScheme.outlineVariant
             )
 
-            // Net Calories
             SummaryRow(
                 label = "Net Calories",
                 value = "$netCalories cal",
                 color = if (netCalories > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
             )
 
-            // Animated message - only shows after first load
             AnimatedVisibility(
                 visible = !isFirstLoad && netCalories != 0,
                 enter = fadeIn(tween(300)) + expandVertically(tween(300))
@@ -362,63 +369,26 @@ private fun SuggestionsSection(
 
         when {
             !suggestionsLoaded && !isLoading -> {
-                // Show prompt to load suggestions
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Text(
-                            text = "Want personalized workout suggestions?",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                        Button(onClick = onLoadSuggestions) {
-                            Text("Load Suggestions")
-                        }
-                    }
-                }
+                // Use enhanced empty state
+                EmptySuggestionsState(
+                    onLoadClick = onLoadSuggestions
+                )
             }
             isLoading -> {
-                AnimatedSkeletonSuggestion()
-            }
-            error != null -> {
-                AnimatedVisibility(
-                    visible = true,
-                    enter = fadeIn(tween(800)) + expandVertically(tween(800)),
-                    exit = fadeOut(tween(500)) + shrinkVertically(tween(500))
-                ) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = error,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                            TextButton(onClick = onLoadSuggestions) {
-                                Text("Retry")
-                            }
-                        }
-                    }
+                // Use enhanced skeleton loading
+                repeat(3) {
+                    SkeletonSuggestionCard()
                 }
             }
+            error != null -> {
+                // Use enhanced error state
+                ErrorState(
+                    description = error,
+                    actionText = "Retry",
+                    onActionClick = onLoadSuggestions
+                )
+            }
             suggestions.isNotEmpty() -> {
-                // Use single animation - only on expand/collapse, not individual cards
                 AnimatedVisibility(
                     visible = isSuggestionsExpanded,
                     enter = fadeIn(
@@ -435,7 +405,6 @@ private fun SuggestionsSection(
                     )
                 ) {
                     if (isContainedInScrollingParent) {
-                        // FOR PHONES: Use a simple Column because the parent scrolls
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
@@ -447,7 +416,6 @@ private fun SuggestionsSection(
                             }
                         }
                     } else {
-                        // FOR TABLETS: Use a LazyColumn because the parent does not scroll
                         LazyColumn(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(bottom = 90.dp)

@@ -10,6 +10,7 @@ import com.smartfit.data.repository.MealRepository
 import com.smartfit.data.repository.StepRepository
 import com.smartfit.domain.model.Meal
 import com.smartfit.ui.screens.activitylog.TimePeriod
+import com.smartfit.util.Constants
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -25,9 +26,12 @@ class MealLogViewModel(
     private val _uiState = MutableStateFlow(MealLogUiState(calorieGoal = calorieGoal))
     val uiState: StateFlow<MealLogUiState> = _uiState.asStateFlow()
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
     init {
         viewModelScope.launch {
-            delay(50)
+            delay(Constants.UI_SHORT_DELAY_MS)
             loadMeals()
             observeRealTimeCalories()
         }
@@ -48,15 +52,28 @@ class MealLogViewModel(
         )
     }
 
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
     private fun loadMeals() {
         viewModelScope.launch {
             Log.d("MealLogViewModel", "Loading meals from database")
             combine(
                 mealRepository.getAllMeals(),
-                _uiState.map { it.selectedPeriod }
-            ) { meals, period ->
+                _uiState.map { it.selectedPeriod },
+                _searchQuery
+            ) { meals, period, query ->
                 val (startDate, endDate) = getDateRange(period)
-                meals.filter { it.date in startDate..<endDate }
+                val filtered = meals.filter { it.date in startDate..<endDate }
+                if (query.isBlank()) {
+                    filtered
+                } else {
+                    filtered.filter { meal ->
+                        meal.name.contains(query, ignoreCase = true) ||
+                                meal.notes.contains(query, ignoreCase = true)
+                    }
+                }
             }
                 .distinctUntilChanged()
                 .collect { filteredMeals ->
@@ -132,5 +149,6 @@ data class MealLogUiState(
     val dailyCaloriesBurned: Int = 0,
     val calorieGoal: Int = 2000,
     val selectedPeriod: TimePeriod = TimePeriod.TODAY,
-    val expandedDates: Set<Long> = emptySet()
+    val expandedDates: Set<Long> = emptySet(),
+    val isLoading: Boolean = false
 )
