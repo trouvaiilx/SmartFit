@@ -11,6 +11,9 @@ import com.smartfit.data.repository.StepRepository
 import com.smartfit.data.repository.SuggestionRepository
 import com.smartfit.di.AppContainer
 import com.smartfit.domain.model.Suggestion
+import com.smartfit.util.CalorieCalculator
+import com.smartfit.util.Constants
+import com.smartfit.util.DateUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -31,8 +34,17 @@ class HomeViewModel(
     init {
         // Delay initialization to prevent blocking app startup
         viewModelScope.launch {
-            delay(100) // Let UI render first
+            delay(Constants.UI_INIT_DELAY_MS)
             observeRealTimeData()
+
+            // Auto-load suggestions if cache is valid
+            if (appContainer.isSuggestionCacheValid() && appContainer.cachedSuggestions.isNotEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    suggestions = appContainer.cachedSuggestions,
+                    suggestionsLoaded = true
+                )
+            }
+
             isInitialized = true
         }
     }
@@ -40,35 +52,33 @@ class HomeViewModel(
     private fun observeRealTimeData() {
         viewModelScope.launch {
             val today = System.currentTimeMillis()
-            val calendar = java.util.Calendar.getInstance().apply {
-                timeInMillis = today
-                set(java.util.Calendar.HOUR_OF_DAY, 0)
-                set(java.util.Calendar.MINUTE, 0)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }
-            val startOfDay = calendar.timeInMillis
-            val endOfDay = startOfDay + 24 * 60 * 60 * 1000
+            val startOfDay = DateUtils.getStartOfDay(today)
+            val endOfDay = DateUtils.getEndOfDay(today)
 
-            // Combine all data sources into one flow with debounce to prevent excessive updates
+            // Combine all data sources with debounce to prevent excessive updates
             combine(
                 stepRepository.getStepsByDateRange(startOfDay, endOfDay),
-                activityRepository.getAllActivities(),
-                mealRepository.getAllMeals()
-            ) { stepCounts, _, _ ->
-                // Recalculate everything when any data changes
+                activityRepository.getActivitiesByDateRange(startOfDay, endOfDay),
+                mealRepository.getMealsByDateRange(startOfDay, endOfDay)
+            ) { stepCounts, activities, meals ->
+                // Calculate step-based calories
                 val totalSteps = stepCounts.sumOf { it.steps }
-                val stepCalories = (totalSteps * 0.04).toInt()
+                val stepCalories = CalorieCalculator.calculateStepCalories(totalSteps)
 
-                val (_, activityCalories) = activityRepository.getDailySummary(today)
+                // Calculate activity calories
+                val activityCalories = activities.sumOf { it.calories }
                 val totalBurned = activityCalories + stepCalories
 
-                val caloriesConsumed = mealRepository.getDailyCalorieIntake(today)
+                // Calculate consumed calories
+                val caloriesConsumed = meals.sumOf { it.calories }
                 val netCalories = caloriesConsumed - totalBurned
 
                 Triple(totalSteps, totalBurned, Pair(caloriesConsumed, netCalories))
             }
-                .distinctUntilChanged() // Only emit when values actually change
+                .distinctUntilChanged()
+                .catch { e ->
+                    Log.e("HomeViewModel", "Error observing real-time data", e)
+                }
                 .collect { (steps, burned, consumedAndNet) ->
                     _uiState.value = _uiState.value.copy(
                         dailySteps = steps,
@@ -82,6 +92,19 @@ class HomeViewModel(
     }
 
     fun loadSuggestions() {
+        // Check cache first
+        if (appContainer.isSuggestionCacheValid() && appContainer.cachedSuggestions.isNotEmpty()) {
+            Log.d("HomeViewModel", "Using cached suggestions")
+            _uiState.value = _uiState.value.copy(
+                suggestions = appContainer.cachedSuggestions,
+                isLoadingSuggestions = false,
+                suggestionsError = null,
+                suggestionsLoaded = true,
+                shouldAnimateCards = true
+            )
+            return
+        }
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoadingSuggestions = true,
@@ -99,6 +122,7 @@ class HomeViewModel(
                         suggestionsLoaded = true
                     )
                     appContainer.cachedSuggestions = suggestions
+                    appContainer.lastSuggestionLoadTime = System.currentTimeMillis()
                 },
                 onFailure = { error ->
                     Log.e("HomeViewModel", "Error loading suggestions: ${error.message}", error)

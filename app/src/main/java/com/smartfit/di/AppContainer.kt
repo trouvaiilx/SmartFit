@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import com.smartfit.BuildConfig
 import com.smartfit.data.local.database.SmartFitDatabase
 import com.smartfit.data.local.datastore.PreferencesManager
 import com.smartfit.data.remote.ApiService
@@ -15,7 +16,6 @@ import com.smartfit.data.repository.StepRepository
 import com.smartfit.data.repository.SuggestionRepository
 import com.smartfit.data.sensors.StepCounterService
 import com.smartfit.domain.model.Suggestion
-import com.smartfit.ui.screens.home.HomeViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -31,8 +31,8 @@ class AppContainer(private val context: Context) {
     private val mealDao = database.mealDao()
     private val stepCountDao = database.stepCountDao()
 
-    // PERSONAL API KEY, KINDLY DO NOT MISUSE.
-    private val apiKey = "5a4ab41f86msh4ed11a8aa8941adp1f5fecjsne5e3ea08664d"
+    // Use BuildConfig instead of hardcoded key
+    private val apiKey = BuildConfig.EXERCISEDB_API_KEY
     private val apiService = ApiService.create(apiKey)
 
     val activityRepository = ActivityRepository(activityDao)
@@ -41,23 +41,13 @@ class AppContainer(private val context: Context) {
     val suggestionRepository = SuggestionRepository(apiService, useMockData = apiKey.isEmpty())
     val preferencesManager = PreferencesManager(context)
 
-    // Singleton HomeViewModel to prevent reloading
-    var homeViewModel: HomeViewModel? = null
-        get() {
-            if (field == null) {
-                field = HomeViewModel(
-                    activityRepository,
-                    suggestionRepository,
-                    mealRepository,
-                    stepRepository,
-                    this
-                )
-            }
-            return field
-        }
-
-    // Cache for loaded suggestions
+    // Cache for loaded suggestions with timestamp
     var cachedSuggestions: List<Suggestion> = emptyList()
+    var lastSuggestionLoadTime: Long = 0
+
+    companion object {
+        const val SUGGESTION_CACHE_DURATION = 24 * 60 * 60 * 1000L // 24 hours
+    }
 
     init {
         // Check if step tracking should be started on app launch
@@ -72,6 +62,10 @@ class AppContainer(private val context: Context) {
 
     fun getSuggestionById(id: String): Suggestion? {
         return cachedSuggestions.find { it.id == id }
+    }
+
+    fun isSuggestionCacheValid(): Boolean {
+        return System.currentTimeMillis() - lastSuggestionLoadTime < SUGGESTION_CACHE_DURATION
     }
 
     fun startStepCounterService() {

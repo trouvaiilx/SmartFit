@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.smartfit.data.repository.ActivityRepository
 import com.smartfit.domain.model.Activity
+import com.smartfit.util.CalorieCalculator
+import com.smartfit.util.ValidationUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,6 +16,7 @@ import kotlinx.coroutines.launch
 
 /**
  * ViewModel for adding and editing activities with calorie calculation.
+ * Now uses Constants and proper validation.
  */
 class AddEditActivityViewModel(
     private val activityRepository: ActivityRepository
@@ -61,11 +64,29 @@ class AddEditActivityViewModel(
     }
 
     fun updateCustomActivityName(name: String) {
+        // Validate length
+        if (!ValidationUtils.isValidTextLength(name)) {
+            _uiState.value = _uiState.value.copy(
+                errorMessage = ValidationUtils.getErrorMessage("text", name)
+            )
+            return
+        }
         _uiState.value = _uiState.value.copy(customActivityName = name)
     }
 
     fun updateDuration(duration: String) {
         _uiState.value = _uiState.value.copy(duration = duration)
+
+        // Validate duration
+        duration.toIntOrNull()?.let { dur ->
+            if (!ValidationUtils.isValidDuration(dur)) {
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = ValidationUtils.getErrorMessage("duration", dur)
+                )
+                return
+            }
+        }
+
         // Only auto-calculate if not "Other"
         if (_uiState.value.type != "Other") {
             calculateCalories()
@@ -74,31 +95,38 @@ class AddEditActivityViewModel(
 
     fun updateCalories(calories: String) {
         _uiState.value = _uiState.value.copy(calories = calories)
+
+        // Validate calories
+        calories.toIntOrNull()?.let { cal ->
+            if (!ValidationUtils.isValidCalories(cal)) {
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = ValidationUtils.getErrorMessage("calories", cal)
+                )
+            }
+        }
     }
 
     fun updateNotes(notes: String) {
+        // Validate length
+        if (!ValidationUtils.isValidTextLength(notes)) {
+            _uiState.value = _uiState.value.copy(
+                errorMessage = ValidationUtils.getErrorMessage("text", notes)
+            )
+            return
+        }
         _uiState.value = _uiState.value.copy(notes = notes)
     }
 
     /**
-     * Calculate calories based on activity type and duration.
-     * Formula: duration * MET value * 3.5 * 70kg / 200
+     * Calculate calories based on activity type and duration using CalorieCalculator
      */
     private fun calculateCalories() {
         val duration = _uiState.value.duration.toIntOrNull() ?: 0
+        if (duration <= 0) return
+
         val type = _uiState.value.type
+        val calculatedCalories = CalorieCalculator.calculateActivityCalories(duration, type)
 
-        val metValue = when (type.lowercase()) {
-            "walking" -> 3.5
-            "running" -> 8.0
-            "cycling" -> 6.0
-            "gym" -> 5.0
-            "swimming" -> 7.0
-            "yoga" -> 2.5
-            else -> 4.0
-        }
-
-        val calculatedCalories = (duration * metValue * 3.5 * 70 / 200).toInt()
         _uiState.value = _uiState.value.copy(calories = calculatedCalories.toString())
         Log.d("AddEditActivityViewModel", "Calculated calories: $calculatedCalories for $type, $duration min")
     }
@@ -106,24 +134,54 @@ class AddEditActivityViewModel(
     fun saveActivity(onSuccess: () -> Unit) {
         val state = _uiState.value
 
+        // Validate type
         if (state.type.isBlank()) {
             _uiState.value = state.copy(errorMessage = "Please select an activity type")
             return
         }
 
+        // Get final activity name
+        val activityName = if (state.type == "Other") {
+            if (state.customActivityName.isBlank()) {
+                _uiState.value = state.copy(errorMessage = "Please enter a custom activity name")
+                return
+            }
+            state.customActivityName
+        } else {
+            state.type
+        }
+
+        // Validate duration
         val duration = state.duration.toIntOrNull()
-        if (duration == null || duration <= 0) {
-            _uiState.value = state.copy(errorMessage = "Please enter a valid duration")
+        if (duration == null || !ValidationUtils.isValidDuration(duration)) {
+            _uiState.value = state.copy(
+                errorMessage = ValidationUtils.getErrorMessage("duration", duration ?: 0)
+            )
             return
         }
 
-        val calories = state.calories.toIntOrNull() ?: 0
+        // Validate calories
+        val calories = state.calories.toIntOrNull()
+        if (calories == null || !ValidationUtils.isValidCalories(calories)) {
+            _uiState.value = state.copy(
+                errorMessage = ValidationUtils.getErrorMessage("calories", calories ?: 0)
+            )
+            return
+        }
+
+        // Validate notes length
+        if (!ValidationUtils.isValidTextLength(state.notes)) {
+            _uiState.value = state.copy(
+                errorMessage = ValidationUtils.getErrorMessage("text", state.notes)
+            )
+            return
+        }
 
         viewModelScope.launch {
             try {
                 val activity = Activity(
                     id = state.activityId,
-                    type = state.type,
+                    type = activityName,
                     duration = duration,
                     calories = calories,
                     steps = 0,
@@ -142,7 +200,7 @@ class AddEditActivityViewModel(
                 onSuccess()
             } catch (e: Exception) {
                 Log.e("AddEditActivityViewModel", "Error saving activity", e)
-                _uiState.value = state.copy(errorMessage = "Failed to save activity")
+                _uiState.value = state.copy(errorMessage = "Failed to save activity: ${e.message}")
             }
         }
     }
